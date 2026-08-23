@@ -6,6 +6,7 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch: {} # 手动触发（调试用：走 main 分支 ref，与 tag 触发对比）
 
 jobs:
   publish:
