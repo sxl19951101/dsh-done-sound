@@ -1,19 +1,18 @@
 name: Publish to npm
 
-# 受信任发布（Trusted Publishing）：push 形如 v* 的 tag 时自动发布到 npm。
-# 无需个人令牌、无需 2FA 验证码 —— 通过 GitHub OIDC 授权（npm 官方推荐方式）。
+# 自动发布到 npm：push 形如 v* 的 tag 时触发（也可在 Actions 页手动 Run workflow）。
+# 使用仓库 Secret NPM_TOKEN（npm 访问令牌，需带发布权限）。
 on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch: {} # 手动触发（调试用：走 main 分支 ref，与 tag 触发对比）
+  workflow_dispatch: {}
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write # OIDC：npm 据此确认身份并授权发布
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -21,4 +20,6 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org
       # lib/ 为已构建产物（自包含），直接发布，无需安装依赖
-      - run: npm publish --provenance --access public
+      - run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
