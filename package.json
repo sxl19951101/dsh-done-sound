@@ -81,8 +81,12 @@
   "devDependencies": {
     "esbuild": "^0.25.0"
   },
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "build": "esbuild src/index.js --bundle --format=esm --platform=node --target=node22 --outfile=lib/index.js",
-    "check": "node --check lib/index.js && node --check lib/client.js"
+    "check": "node --check lib/index.js && node --check lib/client.js",
+    "test": "node test/host.test.mjs && node test/classify.test.mjs"
   }
 }
