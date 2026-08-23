@@ -1,0 +1,23 @@
+name: Publish to npm
+
+# 受信任发布（Trusted Publishing）：push 形如 v* 的 tag 时自动发布到 npm。
+# 无需个人令牌、无需 2FA 验证码 —— 通过 GitHub OIDC 授权（npm 官方推荐方式）。
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # OIDC：npm 据此确认身份并授权发布
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      # lib/ 为已构建产物（自包含），直接发布，无需安装依赖
+      - run: npm publish --provenance --access public
