@@ -22,7 +22,7 @@
  */
 import { fileURLToPath } from 'node:url';
 import { mkdir, readFile, writeFile, unlink } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import z from '@deepseek-ai/schemastery';
 
@@ -34,6 +34,11 @@ export { inject };
 
 /** Uploaded audio hard cap (2 MiB decoded). */
 const MAX_BYTES = 2 * 1024 * 1024;
+
+/** Bundled default sound served when no custom audio is configured. */
+const DEFAULT_AUDIO_PATH = join(dirname(fileURLToPath(import.meta.url)), '..', 'assets', 'turn-done.wav');
+const DEFAULT_AUDIO_URL = '/dsh-done-sound/audio/default';
+const DEFAULT_AUDIO_MIME = 'audio/wav';
 
 /** Accepted audio MIME types -> file extension. */
 const AUDIO_MIMES = {
@@ -57,6 +62,7 @@ const TurnChimeSchema = z.object({
   volume: z.number().min(0).max(1).step(0.01).default(0.8),
   playOnInterrupt: z.boolean().default(false),
   playOnError: z.boolean().default(true),
+  playOnPending: z.boolean().default(true),
   audio: z.object({
     fileId: z.string().default(''),
     fileName: z.string().default(''),
@@ -86,6 +92,7 @@ export function apply(ctx) {
       volume: value.volume,
       playOnInterrupt: value.playOnInterrupt,
       playOnError: value.playOnError,
+      playOnPending: value.playOnPending,
       audio: {
         fileId,
         fileName: value.audio?.fileName ?? '',
@@ -93,6 +100,7 @@ export function apply(ctx) {
         size: value.audio?.size ?? 0,
       },
       url: fileId ? `${ROUTE_PREFIX}/audio/${fileId}` : null,
+      defaultUrl: DEFAULT_AUDIO_URL,
     };
   };
 
@@ -233,6 +241,24 @@ export function apply(ctx) {
     }
     const method = (req.method ?? 'GET').toUpperCase();
 
+    // Serve the bundled default sound (used when no custom audio is set).
+    if (pathname === DEFAULT_AUDIO_URL) {
+      try {
+        const buffer = await readFile(DEFAULT_AUDIO_PATH);
+        res.writeHead(200, {
+          'Content-Type': DEFAULT_AUDIO_MIME,
+          'Content-Length': buffer.length,
+          'Cache-Control': 'no-cache',
+          'X-Content-Type-Options': 'nosniff',
+        });
+        res.end(buffer);
+      } catch {
+        res.writeHead(404);
+        res.end('not found');
+      }
+      return;
+    }
+
     // Serve the stored audio file.
     const audioMatch = /^\/dsh-done-sound\/audio\/([A-Za-z0-9-]+)$/.exec(pathname);
     if (audioMatch) {
@@ -272,6 +298,7 @@ export function apply(ctx) {
         if (typeof body.volume === 'number' && body.volume >= 0 && body.volume <= 1) patch.volume = body.volume;
         if (typeof body.playOnInterrupt === 'boolean') patch.playOnInterrupt = body.playOnInterrupt;
         if (typeof body.playOnError === 'boolean') patch.playOnError = body.playOnError;
+        if (typeof body.playOnPending === 'boolean') patch.playOnPending = body.playOnPending;
         if (Object.keys(patch).length > 0) await scope.update(patch);
         sendJson(res, 200, statusPayload());
         return;

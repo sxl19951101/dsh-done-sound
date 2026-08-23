@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.3] - 2026-08-23
+
+- feat: bundled default sound — plays when no custom audio is configured (ships `assets/turn-done.wav`)
+- feat: alert when the agent is waiting for human confirmation (approval wait), new `playOnPending` toggle (default on)
+- fix: detector self-heals stale config — re-fetches status once when a turn finishes but no audio URL is known yet
+
 ## [0.1.2] - 2026-08-23
 
 - ci: publish via GitHub Actions using `NPM_TOKEN` secret (OIDC trusted publishing returned 404 for this package)

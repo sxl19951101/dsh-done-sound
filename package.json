@@ -1,6 +1,6 @@
 {
   "name": "dsh-done-sound",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Play a user-chosen sound whenever a conversation finishes in the DeepSeek Harness web GUI",
   "license": "MIT",
   "type": "module",
@@ -30,6 +30,7 @@
   },
   "files": [
     "lib",
+    "assets",
     "cordis.patch.yml",
     "README.md",
     "LICENSE"
