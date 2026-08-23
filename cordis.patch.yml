@@ -1,0 +1,8 @@
+# dsh-done-sound bundle patch: inserts the plugin row into the web profile
+# roster. The node half (exports ".") runs in the host process (settings
+# scope, audio file storage, HTTP route, command); the `dsh.client`
+# declaration in package.json makes the browser half (exports "./client")
+# load in the web GUI.
+- insert:
+    - id: dsh-done-sound
+      name: 'dsh-done-sound'
