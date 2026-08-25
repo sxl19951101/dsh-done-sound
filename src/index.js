@@ -78,6 +78,7 @@ const TurnChimeSchema = z.object({
   playOnInterrupt: z.boolean().default(false),
   playOnError: z.boolean().default(true),
   playOnPending: z.boolean().default(true),
+  autoRetryOnError: z.boolean().default(true),
   audio: z.object({
     fileId: z.string().default(''),
     fileName: z.string().default(''),
@@ -109,6 +110,7 @@ export function apply(ctx) {
       playOnInterrupt: value.playOnInterrupt,
       playOnError: value.playOnError,
       playOnPending: value.playOnPending,
+      autoRetryOnError: value.autoRetryOnError,
       audio: {
         fileId,
         fileName: value.audio?.fileName ?? '',
@@ -315,6 +317,7 @@ export function apply(ctx) {
         if (typeof body.playOnInterrupt === 'boolean') patch.playOnInterrupt = body.playOnInterrupt;
         if (typeof body.playOnError === 'boolean') patch.playOnError = body.playOnError;
         if (typeof body.playOnPending === 'boolean') patch.playOnPending = body.playOnPending;
+        if (typeof body.autoRetryOnError === 'boolean') patch.autoRetryOnError = body.autoRetryOnError;
         if (Object.keys(patch).length > 0) await scope.update(patch);
         sendJson(res, 200, statusPayload());
         return;

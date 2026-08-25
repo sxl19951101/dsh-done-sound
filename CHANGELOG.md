@@ -3,6 +3,7 @@
 ## [0.1.4] - 2026-08-25
 
 - feat: show installed plugin version + npm latest-version check in the settings card (red when an update is available, green when up to date)
+- feat: auto-retry on error — after the model exhausts its own retries and the turn ends in error, the plugin optionally sends "继续" to resume (new `autoRetryOnError` toggle, default on, 60s cooldown)
 - fix: no false "completed" trigger on app open — detector waits for history to settle (openState 'open') before listening
 
 ## [0.1.3] - 2026-08-23
