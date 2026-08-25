@@ -320,6 +320,13 @@ export function apply(ctx) {
         if (typeof body.playOnError === 'boolean') patch.playOnError = body.playOnError;
         if (typeof body.playOnPending === 'boolean') patch.playOnPending = body.playOnPending;
         if (typeof body.autoRetryOnError === 'boolean') patch.autoRetryOnError = body.autoRetryOnError;
+        if (
+          typeof body.retryDelaySeconds === 'number' &&
+          body.retryDelaySeconds >= 10 &&
+          body.retryDelaySeconds <= 300
+        ) {
+          patch.retryDelaySeconds = Math.round(body.retryDelaySeconds / 5) * 5;
+        }
         if (Object.keys(patch).length > 0) await scope.update(patch);
         sendJson(res, 200, statusPayload());
         return;

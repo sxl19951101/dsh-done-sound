@@ -27,6 +27,7 @@ const state = {
   volume: 0.8,
   playOnInterrupt: false,
   playOnError: true,
+  retryDelaySeconds: 60,
   audio: { fileId: '', fileName: '', mime: '', size: 0 },
 };
 const scope = {
@@ -140,6 +141,16 @@ check('audio serve 200 + wav', r.status === 200 && r.headers && r.headers['Conte
 // 4. config update
 r = await call('POST', '/dsh-done-sound/api/config', { volume: 0.5, playOnInterrupt: true });
 check('config 200 + reflected', r.status === 200 && r.json && r.json.volume === 0.5 && r.json.playOnInterrupt === true, r.json);
+
+// 4b. retryDelaySeconds (regression: this field was dropped from the handler)
+r = await call('POST', '/dsh-done-sound/api/config', { retryDelaySeconds: 15 });
+check('retry delay saved + reflected', r.status === 200 && r.json && r.json.retryDelaySeconds === 15, r.json);
+r = await call('GET', '/dsh-done-sound/api/status');
+check('retry delay persisted across status read', r.json && r.json.retryDelaySeconds === 15, r.json);
+r = await call('POST', '/dsh-done-sound/api/config', { retryDelaySeconds: 123 });
+check('retry delay rounded to step 5', r.json && r.json.retryDelaySeconds === 125, r.json);
+r = await call('POST', '/dsh-done-sound/api/config', { retryDelaySeconds: 7 });
+check('retry delay below 10 ignored', r.json && r.json.retryDelaySeconds === 125, r.json);
 
 // 5. bad upload -> 400
 r = await call('POST', '/dsh-done-sound/api/audio', { dataUrl: 'data:text/plain;base64,AAAA', fileName: 'x.txt' });
