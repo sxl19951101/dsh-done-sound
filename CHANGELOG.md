@@ -3,7 +3,9 @@
 ## [0.1.4] - 2026-08-25
 
 - feat: show installed plugin version + npm latest-version check in the settings card (red when an update is available, green when up to date)
-- feat: auto-retry on error — after the model exhausts its own retries and the turn ends in error, the plugin optionally sends "继续" to resume (new `autoRetryOnError` toggle, default on, 60s cooldown)
+- feat: auto-retry on error — after the model exhausts its own retries and the turn ends in error, the plugin waits a configurable window (default 60s, 10-300s) then sends "继续" to resume; cancelled automatically if the session recovers during the window (new `autoRetryOnError` toggle + `retryDelaySeconds`, default on)
+- feat: visible countdown chip in the session header during the auto-retry window; module-level timer so "继续" still fires if you navigate away
+- feat: upload limit raised 2MB → 10MB (covers 8MB-class sound-library files)
 - fix: no false "completed" trigger on app open — detector waits for history to settle (openState 'open') before listening
 
 ## [0.1.3] - 2026-08-23

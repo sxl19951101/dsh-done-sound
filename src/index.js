@@ -47,8 +47,8 @@ function pluginVersion() {
   return cachedPluginVersion;
 }
 
-/** Uploaded audio hard cap (2 MiB decoded). */
-const MAX_BYTES = 2 * 1024 * 1024;
+/** Uploaded audio hard cap (10 MiB decoded — covers 8MB-class sound-library files). */
+const MAX_BYTES = 10 * 1024 * 1024;
 
 /** Bundled default sound served when no custom audio is configured. */
 const DEFAULT_AUDIO_PATH = join(dirname(fileURLToPath(import.meta.url)), '..', 'assets', 'turn-done.wav');
@@ -79,6 +79,7 @@ const TurnChimeSchema = z.object({
   playOnError: z.boolean().default(true),
   playOnPending: z.boolean().default(true),
   autoRetryOnError: z.boolean().default(true),
+  retryDelaySeconds: z.number().min(10).max(300).step(5).default(60),
   audio: z.object({
     fileId: z.string().default(''),
     fileName: z.string().default(''),
@@ -111,6 +112,7 @@ export function apply(ctx) {
       playOnError: value.playOnError,
       playOnPending: value.playOnPending,
       autoRetryOnError: value.autoRetryOnError,
+      retryDelaySeconds: value.retryDelaySeconds,
       audio: {
         fileId,
         fileName: value.audio?.fileName ?? '',
@@ -143,7 +145,7 @@ export function apply(ctx) {
     if (!ext) throw new Error(`unsupported audio type: ${mime} (mp3/wav/ogg/webm/m4a/aac/flac only)`);
     const buffer = Buffer.from(match[2], 'base64');
     if (buffer.length === 0) throw new Error('empty audio content');
-    if (buffer.length > MAX_BYTES) throw new Error(`audio exceeds 2MB (got ${buffer.length} bytes)`);
+    if (buffer.length > MAX_BYTES) throw new Error(`audio exceeds 10MB (got ${buffer.length} bytes)`);
 
     const fileId = randomUUID();
     await mkdir(dataDir, { recursive: true });
