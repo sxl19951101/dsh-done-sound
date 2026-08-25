@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.4] - 2026-08-25
+
+- feat: show installed plugin version + npm latest-version check in the settings card (red when an update is available, green when up to date)
+- fix: no false "completed" trigger on app open — detector waits for history to settle (openState 'open') before listening
+
 ## [0.1.3] - 2026-08-23
 
 - feat: bundled default sound — plays when no custom audio is configured (ships `assets/turn-done.wav`)

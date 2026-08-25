@@ -21,6 +21,7 @@
  * not yet available at apply time.
  */
 import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 import { mkdir, readFile, writeFile, unlink } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -31,6 +32,20 @@ export const name = 'dsh-done-sound';
 /** Cordis service names made available on the apply ctx. */
 const inject = ['settings', 'commands', 'webServer'];
 export { inject };
+
+/** This plugin's installed version, read once from its own package.json. */
+let cachedPluginVersion = null;
+function pluginVersion() {
+  if (cachedPluginVersion !== null) return cachedPluginVersion;
+  try {
+    const pkgPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'package.json');
+    const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+    cachedPluginVersion = typeof pkg.version === 'string' ? pkg.version : 'unknown';
+  } catch {
+    cachedPluginVersion = 'unknown';
+  }
+  return cachedPluginVersion;
+}
 
 /** Uploaded audio hard cap (2 MiB decoded). */
 const MAX_BYTES = 2 * 1024 * 1024;
@@ -88,6 +103,7 @@ export function apply(ctx) {
     const fileId = value.audio?.fileId ?? '';
     return {
       ok: true,
+      version: pluginVersion(),
       enabled: value.enabled,
       volume: value.volume,
       playOnInterrupt: value.playOnInterrupt,
