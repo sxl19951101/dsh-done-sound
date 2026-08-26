@@ -8,8 +8,10 @@
 - feat: countdown chip made much more prominent — amber gradient pill with a pulsing animation and a large seconds counter; settings-card countdown line also highlighted
 - feat: retry-delay input saved via an explicit "确定" button (local draft while typing, commit on OK/Enter/blur, green "已保存 ✓" feedback)
 - fix: retry-delay value was never persisted — the host `/api/config` handler dropped `retryDelaySeconds`, so changing it to e.g. 15 and reopening showed 60 again; host now saves it (10-300, rounded to 5s steps) and the client verifies the host actually persisted the value
+- fix: auto-retry "继续" was never actually sent — the client injected only `remote`, where no `sessions` namespace exists, so the send guard silently skipped (the countdown ran, then nothing happened). The retry now sends through `ctx.connection.api.sessions.prompt` — the exact same browser→host RPC route the composer's send uses — and failures are no longer silent: console error + a "自动发送「继续」失败" row in the settings card; the header countdown line now also appears in the settings card while armed
 - feat: upload limit raised 2MB → 10MB (covers 8MB-class sound-library files)
 - fix: no false "completed" trigger on app open — detector waits for history to settle (openState 'open') before listening
+- fix: the pending ("waiting for you") chime sometimes never played — it only fired on the 0→N rising edge of the pending count, so a *replacement* wait (one approval resolved while the next is requested, count stays at 1) and a wait already pending at page-load were both missed. Pending items are now fingerprinted individually (`approvalId`/`questionRpcId`), the chime fires on any *new* waiting item, and it also notifies once on mount if the conversation is already waiting; if no audio URL is known the detector re-fetches status once instead of skipping, and `Audio.play()` rejections are logged instead of swallowed
 
 ## [0.1.3] - 2026-08-23
 
