@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.7] - 2026-08-26
+
+- chore: 重新发布——0.1.6 的 README 数据经 npm 官方 registry 逐字节核对完全正常（干净 UTF-8 中文），但 npm 包详情页的显示缓存未更新（页面提示 "This package does not have a README"）；发布本版本以强制刷新 npm 网页缓存
+- chore: `.gitignore` 补上 `.cm*.txt` 规则，防止提交信息临时文件误入仓库
+
 ## [0.1.6] - 2026-08-26
 
 - feat: 日志文件路径改为 `logs/` 目录下的 `YYYYMMDD-dsh-done-sound.log`——不再每天建立日期子文件夹，logs 下直接按天一个文件
