@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.6] - 2026-08-26
+
+- feat: 日志文件路径改为 `logs/` 目录下的 `YYYYMMDD-dsh-done-sound.log`——不再每天建立日期子文件夹，logs 下直接按天一个文件
+- feat: 设置卡片新增「导出日志」按钮——点击后弹出浏览器保存对话框，可自定义导出位置；默认文件名即当天日志文件名（host 新增 `GET /dsh-done-sound/api/log/export`）
+
 ## [0.1.5] - 2026-08-26
 
 - feat: file logging — browser diagnostics now survive a closed DevTools. The client mirrors its console lines (audio play failures ×2, auto-retry success/failure) and the host logs key operations (audio saved/cleared, command/API errors) into `<pluginRoot>/logs/YYYYMMDD/dsh-done-sound.log` — a fresh file every day, one per date folder. Transport is `POST /dsh-done-sound/api/log` (client-reported lines tagged `CLIENT-*`); `GET /dsh-done-sound/api/log` and the settings card show today's log file path. Logging is strictly best-effort and can never crash the plugin

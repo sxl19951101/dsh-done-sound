@@ -15,6 +15,7 @@
  *       POST /dsh-done-sound/api/clear             -> remove the stored audio
  *       POST /dsh-done-sound/api/log               -> {level, message, source} client-reported log lines
  *       GET  /dsh-done-sound/api/log               -> {logPath} today's log file path
+ *       GET  /dsh-done-sound/api/log/export        -> download today's log file as an attachment
  *
  * The `dsh-done-sound` slash command remains as a chat-side manual path.
  *
@@ -51,16 +52,20 @@ function pluginVersion() {
 
 /**
  * File logger: appends one line per event to
- * `<pluginRoot>/logs/<YYYYMMDD>/dsh-done-sound.log` — a fresh file every day.
+ * `<pluginRoot>/logs/<YYYYMMDD>-dsh-done-sound.log` — a fresh file every day.
  * Logging must never break the plugin, so every failure is swallowed.
  */
 const LOGS_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', 'logs');
 
-function datedLogPath(now = new Date()) {
+function datedLogFileName(now = new Date()) {
   const y = now.getFullYear();
   const m = String(now.getMonth() + 1).padStart(2, '0');
   const d = String(now.getDate()).padStart(2, '0');
-  return join(LOGS_ROOT, `${y}${m}${d}`, 'dsh-done-sound.log');
+  return `${y}${m}${d}-dsh-done-sound.log`;
+}
+
+function datedLogPath(now = new Date()) {
+  return join(LOGS_ROOT, datedLogFileName(now));
 }
 
 function writeLog(level, message) {
@@ -152,6 +157,7 @@ export function apply(ctx) {
       url: fileId ? `${ROUTE_PREFIX}/audio/${fileId}` : null,
       defaultUrl: DEFAULT_AUDIO_URL,
       logPath: datedLogPath(),
+      logFileName: datedLogFileName(),
     };
   };
 
@@ -387,7 +393,23 @@ export function apply(ctx) {
         return;
       }
       if (pathname === '/dsh-done-sound/api/log' && method === 'GET') {
-        sendJson(res, 200, { ok: true, logPath: datedLogPath() });
+        sendJson(res, 200, { ok: true, logPath: datedLogPath(), logFileName: datedLogFileName() });
+        return;
+      }
+      if (pathname === '/dsh-done-sound/api/log/export' && method === 'GET') {
+        try {
+          const buffer = await readFile(datedLogPath());
+          res.writeHead(200, {
+            'Content-Type': 'text/plain; charset=utf-8',
+            'Content-Disposition': `attachment; filename="${datedLogFileName()}"`,
+            'Content-Length': buffer.length,
+            'Cache-Control': 'no-cache',
+            'X-Content-Type-Options': 'nosniff',
+          });
+          res.end(buffer);
+        } catch {
+          sendJson(res, 404, { ok: false, error: '今天的日志文件还不存在' });
+        }
         return;
       }
     } catch (error) {

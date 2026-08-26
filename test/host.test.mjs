@@ -164,6 +164,14 @@ check('clear 200 + url null', r.status === 200 && r.json && r.json.url === null,
 let cr = await commandHandler({ rawInput: 'status' });
 check('command status success', cr.kind === 'success' && JSON.parse(cr.text).ok === true, cr);
 
+// 7b. log report -> file -> export
+r = await call('POST', '/dsh-done-sound/api/log', { level: 'warn', message: 'hello-log-export', source: 'client' });
+check('log report 200', r.status === 200 && r.json && r.json.ok === true, r);
+r = await call('GET', '/dsh-done-sound/api/log/export');
+check('log export 200 + content', r.status === 200 && typeof r.text === 'string' && r.text.includes('hello-log-export'), { status: r.status, text: r.text && r.text.slice(0, 80) });
+r = await call('GET', '/dsh-done-sound/api/log');
+check('log info shows dated file name', r.json && typeof r.json.logFileName === 'string' && r.json.logFileName.indexOf('-dsh-done-sound.log') > 0, r.json);
+
 // 8. unknown api path -> 404
 r = await call('GET', '/dsh-done-sound/api/nope');
 check('unknown api 404', r.status === 404, r);
