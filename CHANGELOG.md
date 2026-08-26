@@ -1,5 +1,10 @@
 # Changelog
 
+## [0.1.5] - 2026-08-26
+
+- feat: file logging — browser diagnostics now survive a closed DevTools. The client mirrors its console lines (audio play failures ×2, auto-retry success/failure) and the host logs key operations (audio saved/cleared, command/API errors) into `<pluginRoot>/logs/YYYYMMDD/dsh-done-sound.log` — a fresh file every day, one per date folder. Transport is `POST /dsh-done-sound/api/log` (client-reported lines tagged `CLIENT-*`); `GET /dsh-done-sound/api/log` and the settings card show today's log file path. Logging is strictly best-effort and can never crash the plugin
+- fix: README Chinese text was mojibake (wrong GBK re-encode) — rewritten as clean UTF-8
+
 ## [0.1.4] - 2026-08-25
 
 - feat: show installed plugin version + npm latest-version check in the settings card (red when an update is available, green when up to date)

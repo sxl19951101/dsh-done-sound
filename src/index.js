@@ -13,6 +13,8 @@
  *       POST /dsh-done-sound/api/config            -> {enabled?, volume?, playOnInterrupt?, playOnError?}
  *       POST /dsh-done-sound/api/audio             -> {dataUrl, fileName}
  *       POST /dsh-done-sound/api/clear             -> remove the stored audio
+ *       POST /dsh-done-sound/api/log               -> {level, message, source} client-reported log lines
+ *       GET  /dsh-done-sound/api/log               -> {logPath} today's log file path
  *
  * The `dsh-done-sound` slash command remains as a chat-side manual path.
  *
@@ -21,7 +23,7 @@
  * not yet available at apply time.
  */
 import { fileURLToPath } from 'node:url';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdirSync, appendFileSync } from 'node:fs';
 import { mkdir, readFile, writeFile, unlink } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -45,6 +47,34 @@ function pluginVersion() {
     cachedPluginVersion = 'unknown';
   }
   return cachedPluginVersion;
+}
+
+/**
+ * File logger: appends one line per event to
+ * `<pluginRoot>/logs/<YYYYMMDD>/dsh-done-sound.log` — a fresh file every day.
+ * Logging must never break the plugin, so every failure is swallowed.
+ */
+const LOGS_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', 'logs');
+
+function datedLogPath(now = new Date()) {
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return join(LOGS_ROOT, `${y}${m}${d}`, 'dsh-done-sound.log');
+}
+
+function writeLog(level, message) {
+  try {
+    const now = new Date();
+    const stamp =
+      `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ` +
+      `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+    const file = datedLogPath(now);
+    mkdirSync(dirname(file), { recursive: true });
+    appendFileSync(file, `[${stamp}] [${level}] ${message}\n`, 'utf8');
+  } catch {
+    // never let logging break the plugin
+  }
 }
 
 /** Uploaded audio hard cap (10 MiB decoded — covers 8MB-class sound-library files). */
@@ -121,6 +151,7 @@ export function apply(ctx) {
       },
       url: fileId ? `${ROUTE_PREFIX}/audio/${fileId}` : null,
       defaultUrl: DEFAULT_AUDIO_URL,
+      logPath: datedLogPath(),
     };
   };
 
@@ -135,6 +166,7 @@ export function apply(ctx) {
       }
     }
     await scope.update({ audio: { fileId: '', fileName: '', mime: '', size: 0 } });
+    writeLog('INFO', 'audio cleared');
   };
 
   const setAudio = async (dataUrl, fileName) => {
@@ -163,6 +195,7 @@ export function apply(ctx) {
         // ignore
       }
     }
+    writeLog('INFO', `audio stored: ${fileName || 'chime'} (${buffer.length} bytes, ${mime})`);
     return fileId;
   };
 
@@ -221,6 +254,7 @@ export function apply(ctx) {
             return { kind: 'error', text: `未知操作：${action}` };
         }
       } catch (error) {
+        writeLog('ERROR', `command failed: ${error instanceof Error ? error.message : String(error)}`);
         return { kind: 'error', text: error instanceof Error ? error.message : String(error) };
       }
     },
@@ -342,7 +376,22 @@ export function apply(ctx) {
         sendJson(res, 200, statusPayload());
         return;
       }
+      if (pathname === '/dsh-done-sound/api/log' && method === 'POST') {
+        const body = await readJsonBody(req);
+        const message = typeof body.message === 'string' ? body.message : '';
+        if (message) {
+          const level = typeof body.level === 'string' && /^[A-Za-z]+$/.test(body.level) ? body.level.toUpperCase() : 'INFO';
+          writeLog(body.source === 'client' ? `CLIENT-${level}` : level, message.slice(0, 4000));
+        }
+        sendJson(res, 200, { ok: true });
+        return;
+      }
+      if (pathname === '/dsh-done-sound/api/log' && method === 'GET') {
+        sendJson(res, 200, { ok: true, logPath: datedLogPath() });
+        return;
+      }
     } catch (error) {
+      writeLog('ERROR', `api ${method} ${pathname} failed: ${error instanceof Error ? error.message : String(error)}`);
       sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
       return;
     }
