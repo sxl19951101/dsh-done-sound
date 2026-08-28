@@ -85,9 +85,27 @@ function writeLog(level, message) {
 /** Uploaded audio hard cap (10 MiB decoded — covers 8MB-class sound-library files). */
 const MAX_BYTES = 10 * 1024 * 1024;
 
-/** Bundled default sound served when no custom audio is configured. */
-const DEFAULT_AUDIO_PATH = join(dirname(fileURLToPath(import.meta.url)), '..', 'assets', 'turn-done.wav');
-const DEFAULT_AUDIO_URL = '/dsh-done-sound/audio/default';
+/**
+ * Per-scene default sounds. Every trigger scene has its own bundled default
+ * so a user who never uploads anything still hears a distinct sound for each
+ * situation (normal completion / interrupt / error / approval wait / retry ok).
+ */
+const SCENES = ['normal', 'interrupt', 'error', 'pending', 'retry'];
+
+const DEFAULT_AUDIO_FILES = {
+  normal: 'turn-done.wav',
+  interrupt: 'turn-interrupt.wav',
+  error: 'turn-error.wav',
+  pending: 'turn-pending.wav',
+  retry: 'turn-retry.wav',
+};
+const DEFAULT_AUDIO_PATHS = Object.fromEntries(
+  Object.entries(DEFAULT_AUDIO_FILES).map(([scene, file]) => [
+    scene,
+    join(dirname(fileURLToPath(import.meta.url)), '..', 'assets', file),
+  ]),
+);
+const DEFAULT_AUDIO_URLS = Object.fromEntries(SCENES.map((s) => [s, `/dsh-done-sound/audio/default-${s}`]));
 const DEFAULT_AUDIO_MIME = 'audio/wav';
 
 /** Accepted audio MIME types -> file extension. */
@@ -107,20 +125,45 @@ const AUDIO_MIMES = {
   'audio/x-flac': 'flac',
 };
 
+const SoundMetaSchema = z
+  .object({
+    fileId: z.string().default(''),
+    fileName: z.string().default(''),
+    mime: z.string().default(''),
+    size: z.number().default(0),
+  })
+  .default({});
+
 const TurnChimeSchema = z.object({
   enabled: z.boolean().default(true),
   volume: z.number().min(0).max(1).step(0.01).default(0.8),
   playOnInterrupt: z.boolean().default(false),
   playOnError: z.boolean().default(true),
   playOnPending: z.boolean().default(true),
+  playOnRetry: z.boolean().default(true),
   autoRetryOnError: z.boolean().default(true),
   retryDelaySeconds: z.number().min(10).max(300).step(5).default(60),
-  audio: z.object({
-    fileId: z.string().default(''),
-    fileName: z.string().default(''),
-    mime: z.string().default(''),
-    size: z.number().default(0),
-  }).default({}),
+  // One independently configurable audio per trigger scene.
+  sounds: z
+    .object({
+      normal: SoundMetaSchema,
+      interrupt: SoundMetaSchema,
+      error: SoundMetaSchema,
+      pending: SoundMetaSchema,
+      retry: SoundMetaSchema,
+    })
+    .default({}),
+  // Legacy single-audio field (pre-0.1.9). Kept for migration: when
+  // `sounds.normal` is empty, the old `audio` value is used for the normal
+  // scene until the user picks a new one.
+  audio: z
+    .object({
+      fileId: z.string().default(''),
+      fileName: z.string().default(''),
+      mime: z.string().default(''),
+      size: z.number().default(0),
+    })
+    .default({}),
 });
 
 const NS = 'dsh-done-sound';
@@ -135,9 +178,34 @@ export function apply(ctx) {
 
   const audioPath = (fileId) => join(dataDir, `${fileId}.bin`);
 
+  const isScene = (s) => typeof s === 'string' && SCENES.includes(s);
+
+  // Resolve the effective audio meta for a scene: the scene's own uploaded
+  // audio, or (normal scene only) the legacy single audio, else empty.
+  const sceneAudio = (value, scene) => {
+    const s = value.sounds?.[scene];
+    if (s && typeof s.fileId === 'string' && s.fileId) return s;
+    if (scene === 'normal' && value.audio && typeof value.audio.fileId === 'string' && value.audio.fileId) {
+      return value.audio;
+    }
+    return { fileId: '', fileName: '', mime: '', size: 0 };
+  };
+
   const statusPayload = () => {
     const value = scope.get();
-    const fileId = value.audio?.fileId ?? '';
+    const sounds = {};
+    for (const scene of SCENES) {
+      const meta = sceneAudio(value, scene);
+      const fileId = meta.fileId ?? '';
+      sounds[scene] = {
+        fileId,
+        fileName: meta.fileName ?? '',
+        mime: meta.mime ?? '',
+        size: meta.size ?? 0,
+        url: fileId ? `${ROUTE_PREFIX}/audio/${fileId}` : null,
+        defaultUrl: DEFAULT_AUDIO_URLS[scene],
+      };
+    }
     return {
       ok: true,
       version: pluginVersion(),
@@ -146,24 +214,20 @@ export function apply(ctx) {
       playOnInterrupt: value.playOnInterrupt,
       playOnError: value.playOnError,
       playOnPending: value.playOnPending,
+      playOnRetry: value.playOnRetry,
       autoRetryOnError: value.autoRetryOnError,
       retryDelaySeconds: value.retryDelaySeconds,
-      audio: {
-        fileId,
-        fileName: value.audio?.fileName ?? '',
-        mime: value.audio?.mime ?? '',
-        size: value.audio?.size ?? 0,
-      },
-      url: fileId ? `${ROUTE_PREFIX}/audio/${fileId}` : null,
-      defaultUrl: DEFAULT_AUDIO_URL,
+      sounds,
       logPath: datedLogPath(),
       logFileName: datedLogFileName(),
     };
   };
 
-  const clearAudio = async () => {
+  const clearAudio = async (scene) => {
     const value = scope.get();
-    const fileId = value.audio?.fileId;
+    const target = isScene(scene) ? scene : 'normal';
+    const meta = sceneAudio(value, target);
+    const fileId = meta.fileId;
     if (fileId) {
       try {
         await unlink(audioPath(fileId));
@@ -171,11 +235,15 @@ export function apply(ctx) {
         // file already gone; settings are the source of truth
       }
     }
-    await scope.update({ audio: { fileId: '', fileName: '', mime: '', size: 0 } });
-    writeLog('INFO', 'audio cleared');
+    const patch = { sounds: { ...(value.sounds ?? {}), [target]: { fileId: '', fileName: '', mime: '', size: 0 } } };
+    // Clearing the normal scene also clears the legacy single-audio field,
+    // so a cleared normal scene stays cleared.
+    if (target === 'normal') patch.audio = { fileId: '', fileName: '', mime: '', size: 0 };
+    await scope.update(patch);
+    writeLog('INFO', `audio cleared (${target})`);
   };
 
-  const setAudio = async (dataUrl, fileName) => {
+  const setAudio = async (dataUrl, fileName, scene) => {
     const match = /^data:([^;,]+);base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
     if (!match) throw new Error('invalid audio data (need data:<mime>;base64,<data>)');
     const mime = match[1].toLowerCase();
@@ -185,15 +253,19 @@ export function apply(ctx) {
     if (buffer.length === 0) throw new Error('empty audio content');
     if (buffer.length > MAX_BYTES) throw new Error(`audio exceeds 10MB (got ${buffer.length} bytes)`);
 
+    const target = isScene(scene) ? scene : 'normal';
     const fileId = randomUUID();
     await mkdir(dataDir, { recursive: true });
     await writeFile(audioPath(fileId), buffer);
 
-    // Replace any previous file, then commit settings.
-    const previous = scope.get().audio?.fileId;
-    await scope.update({
-      audio: { fileId, fileName: fileName || 'chime', mime, size: buffer.length },
-    });
+    // Replace the scene's previous file, then commit settings.
+    const previous = sceneAudio(scope.get(), target).fileId;
+    const patch = {
+      sounds: { ...(scope.get().sounds ?? {}), [target]: { fileId, fileName: fileName || 'chime', mime, size: buffer.length } },
+    };
+    // Setting the normal scene supersedes the legacy single-audio value.
+    if (target === 'normal') patch.audio = { fileId, fileName: fileName || 'chime', mime, size: buffer.length };
+    await scope.update(patch);
     if (previous && previous !== fileId) {
       try {
         await unlink(audioPath(previous));
@@ -201,7 +273,7 @@ export function apply(ctx) {
         // ignore
       }
     }
-    writeLog('INFO', `audio stored: ${fileName || 'chime'} (${buffer.length} bytes, ${mime})`);
+    writeLog('INFO', `audio stored (${target}): ${fileName || 'chime'} (${buffer.length} bytes, ${mime})`);
     return fileId;
   };
 
@@ -301,10 +373,13 @@ export function apply(ctx) {
     }
     const method = (req.method ?? 'GET').toUpperCase();
 
-    // Serve the bundled default sound (used when no custom audio is set).
-    if (pathname === DEFAULT_AUDIO_URL) {
+    // Serve the bundled per-scene default sounds (used when no custom audio
+    // is set for a scene).
+    const defaultMatch = /^\/dsh-done-sound\/audio\/default-([A-Za-z0-9-]+)$/.exec(pathname);
+    if (defaultMatch && SCENES.includes(defaultMatch[1])) {
+      const scene = defaultMatch[1];
       try {
-        const buffer = await readFile(DEFAULT_AUDIO_PATH);
+        const buffer = await readFile(DEFAULT_AUDIO_PATHS[scene]);
         res.writeHead(200, {
           'Content-Type': DEFAULT_AUDIO_MIME,
           'Content-Length': buffer.length,
@@ -319,12 +394,13 @@ export function apply(ctx) {
       return;
     }
 
-    // Serve the stored audio file.
+    // Serve the stored audio file (must belong to any configured scene).
     const audioMatch = /^\/dsh-done-sound\/audio\/([A-Za-z0-9-]+)$/.exec(pathname);
     if (audioMatch) {
       const fileId = audioMatch[1];
-      const audio = scope.get().audio;
-      if (!FILE_ID_RE.test(fileId) || !audio || audio.fileId !== fileId) {
+      const value = scope.get();
+      const meta = SCENES.map((s) => sceneAudio(value, s)).find((m) => m.fileId === fileId);
+      if (!FILE_ID_RE.test(fileId) || !meta) {
         res.writeHead(404);
         res.end('not found');
         return;
@@ -332,7 +408,7 @@ export function apply(ctx) {
       try {
         const buffer = await readFile(audioPath(fileId));
         res.writeHead(200, {
-          'Content-Type': audio.mime || 'application/octet-stream',
+          'Content-Type': meta.mime || 'application/octet-stream',
           'Content-Length': buffer.length,
           'Cache-Control': 'no-cache',
           'X-Content-Type-Options': 'nosniff',
@@ -359,6 +435,7 @@ export function apply(ctx) {
         if (typeof body.playOnInterrupt === 'boolean') patch.playOnInterrupt = body.playOnInterrupt;
         if (typeof body.playOnError === 'boolean') patch.playOnError = body.playOnError;
         if (typeof body.playOnPending === 'boolean') patch.playOnPending = body.playOnPending;
+        if (typeof body.playOnRetry === 'boolean') patch.playOnRetry = body.playOnRetry;
         if (typeof body.autoRetryOnError === 'boolean') patch.autoRetryOnError = body.autoRetryOnError;
         if (
           typeof body.retryDelaySeconds === 'number' &&
@@ -373,12 +450,15 @@ export function apply(ctx) {
       }
       if (pathname === '/dsh-done-sound/api/audio' && method === 'POST') {
         const body = await readJsonBody(req);
-        await setAudio(typeof body.dataUrl === 'string' ? body.dataUrl : '', typeof body.fileName === 'string' ? body.fileName : '');
+        const scene = typeof body.scene === 'string' && SCENES.includes(body.scene) ? body.scene : 'normal';
+        await setAudio(typeof body.dataUrl === 'string' ? body.dataUrl : '', typeof body.fileName === 'string' ? body.fileName : '', scene);
         sendJson(res, 200, statusPayload());
         return;
       }
       if (pathname === '/dsh-done-sound/api/clear' && method === 'POST') {
-        await clearAudio();
+        const body = await readJsonBody(req);
+        const scene = typeof body.scene === 'string' && SCENES.includes(body.scene) ? body.scene : 'normal';
+        await clearAudio(scene);
         sendJson(res, 200, statusPayload());
         return;
       }

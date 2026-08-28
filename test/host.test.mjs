@@ -27,7 +27,16 @@ const state = {
   volume: 0.8,
   playOnInterrupt: false,
   playOnError: true,
+  playOnPending: true,
+  playOnRetry: true,
   retryDelaySeconds: 60,
+  sounds: {
+    normal: { fileId: '', fileName: '', mime: '', size: 0 },
+    interrupt: { fileId: '', fileName: '', mime: '', size: 0 },
+    error: { fileId: '', fileName: '', mime: '', size: 0 },
+    pending: { fileId: '', fileName: '', mime: '', size: 0 },
+    retry: { fileId: '', fileName: '', mime: '', size: 0 },
+  },
   audio: { fileId: '', fileName: '', mime: '', size: 0 },
 };
 const scope = {
@@ -124,23 +133,43 @@ const WAV_DATA_URL = 'data:audio/wav;base64,' + WAV_B64;
 // 1. status (empty)
 let r = await call('GET', '/dsh-done-sound/api/status');
 check('status 200', r.status === 200, r);
-check('status url null initially', r.json && r.json.url === null, r.json);
+check('status normal url null initially', r.json && r.json.sounds && r.json.sounds.normal.url === null, r.json && r.json.sounds);
+check('five scenes present', r.json && Object.keys(r.json.sounds).length === 5, r.json && r.json.sounds);
+check('default urls per scene', r.json && r.json.sounds.interrupt.defaultUrl === '/dsh-done-sound/audio/default-interrupt' && r.json.sounds.retry.defaultUrl === '/dsh-done-sound/audio/default-retry', r.json && r.json.sounds);
 
-// 2. upload audio
+// 1b. serve per-scene default sounds
+for (const scene of ['normal', 'interrupt', 'error', 'pending', 'retry']) {
+  r = await call('GET', '/dsh-done-sound/audio/default-' + scene);
+  check('default audio serve 200 ' + scene, r.status === 200 && r.headers && r.headers['Content-Type'] === 'audio/wav', { status: r.status, ct: r.headers && r.headers['Content-Type'] });
+}
+
+// 2. upload audio (default scene = normal)
 r = await call('POST', '/dsh-done-sound/api/audio', { dataUrl: WAV_DATA_URL, fileName: 'ding.wav' });
 check('audio upload 200', r.status === 200 && r.json && r.json.ok === true, r);
-check('audio url set', r.json && typeof r.json.url === 'string' && r.json.url.startsWith('/dsh-done-sound/audio/'), r.json);
-const fileId = r.json.audio.fileId;
-check('audio metadata saved', r.json.audio.mime === 'audio/wav' && r.json.audio.size === Buffer.from(WAV_B64, 'base64').length, r.json.audio);
+check('normal audio url set', r.json && typeof r.json.sounds.normal.url === 'string' && r.json.sounds.normal.url.startsWith('/dsh-done-sound/audio/'), r.json && r.json.sounds);
+const fileId = r.json.sounds.normal.fileId;
+check('audio metadata saved', r.json.sounds.normal.mime === 'audio/wav' && r.json.sounds.normal.size === Buffer.from(WAV_B64, 'base64').length, r.json.sounds.normal);
 
-// 3. serve the audio file back
+// 2b. upload to interrupt scene explicitly
+r = await call('POST', '/dsh-done-sound/api/audio', { dataUrl: WAV_DATA_URL, fileName: 'buzz.wav', scene: 'interrupt' });
+check('interrupt upload 200', r.status === 200 && r.json && typeof r.json.sounds.interrupt.url === 'string', r.json && r.json.sounds.interrupt);
+const interruptFileId = r.json.sounds.interrupt.fileId;
+check('normal audio unaffected', r.json && r.json.sounds.normal.fileId === fileId, r.json && r.json.sounds);
+
+// 3. serve the audio files back
 r = await call('GET', '/dsh-done-sound/audio/' + fileId);
 console.log('  [debug] serve response:', JSON.stringify({ status: r.status, headers: r.headers, text: r.text.slice(0, 40) }));
 check('audio serve 200 + wav', r.status === 200 && r.headers && r.headers['Content-Type'] === 'audio/wav', { status: r.status, ct: r.headers && r.headers['Content-Type'] });
+r = await call('GET', '/dsh-done-sound/audio/' + interruptFileId);
+check('interrupt audio serve 200', r.status === 200, { status: r.status });
 
 // 4. config update
 r = await call('POST', '/dsh-done-sound/api/config', { volume: 0.5, playOnInterrupt: true });
 check('config 200 + reflected', r.status === 200 && r.json && r.json.volume === 0.5 && r.json.playOnInterrupt === true, r.json);
+
+// 4a. playOnRetry toggle
+r = await call('POST', '/dsh-done-sound/api/config', { playOnRetry: false });
+check('playOnRetry saved + reflected', r.status === 200 && r.json && r.json.playOnRetry === false, r.json);
 
 // 4b. retryDelaySeconds (regression: this field was dropped from the handler)
 r = await call('POST', '/dsh-done-sound/api/config', { retryDelaySeconds: 15 });
@@ -156,9 +185,14 @@ check('retry delay below 10 ignored', r.json && r.json.retryDelaySeconds === 125
 r = await call('POST', '/dsh-done-sound/api/audio', { dataUrl: 'data:text/plain;base64,AAAA', fileName: 'x.txt' });
 check('bad mime -> 400 ok:false', r.status === 400 && r.json && r.json.ok === false, r);
 
-// 6. clear
+// 6. clear interrupt scene only
+r = await call('POST', '/dsh-done-sound/api/clear', { scene: 'interrupt' });
+check('clear interrupt 200 + url null', r.status === 200 && r.json && r.json.sounds.interrupt.url === null, r.json && r.json.sounds.interrupt);
+check('clear keeps normal', r.json && r.json.sounds.normal.fileId === fileId, r.json && r.json.sounds.normal);
+
+// 6b. clear normal scene
 r = await call('POST', '/dsh-done-sound/api/clear');
-check('clear 200 + url null', r.status === 200 && r.json && r.json.url === null, r.json);
+check('clear normal 200 + url null', r.status === 200 && r.json && r.json.sounds.normal.url === null, r.json && r.json.sounds.normal);
 
 // 7. slash command status
 let cr = await commandHandler({ rawInput: 'status' });
