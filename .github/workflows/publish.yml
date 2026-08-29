@@ -1,25 +1,34 @@
 name: Publish to npm
 
-# 自动发布到 npm：push 形如 v* 的 tag 时触发（也可在 Actions 页手动 Run workflow）。
-# 使用仓库 Secret NPM_TOKEN（npm 访问令牌，需带发布权限）。
+# 自动发布到 npm：push 形如 v* 的 tag 时触发，也可在 Actions 页手动运行。
+# 使用仓库 Secret NPM_TOKEN（npm Access Token）。Token 过期后只需在
+# GitHub Settings -> Secrets and variables -> Actions 中替换同名 Secret。
 on:
   push:
     tags:
       - 'v*'
   workflow_dispatch: {}
 
+permissions:
+  contents: read
+
 jobs:
   publish:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
-      # lib/ 为已构建产物（自包含），直接发布，无需安装依赖
-      - run: npm publish --access public
+
+      - name: Verify package
+        run: npm run check && npm test
+
+      - name: Publish to npm
+        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
